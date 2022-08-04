@@ -15,6 +15,9 @@ from utils.data_loading import BasicDataset, CarvanaDataset
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 from unet import UNet
+from unet.unet_parts import DoubleConv
+
+from NM_pruned_layers import NMSparseConv, NMSparseLinear
 
 dir_img = Path('./data/imgs/')
 dir_mask = Path('./data/masks/')
@@ -142,7 +145,31 @@ def train_net(net,
             torch.save(net.state_dict(), str(dir_checkpoint / 'checkpoint_epoch{}.pth'.format(epoch)))
             logging.info(f'Checkpoint {epoch} saved!')
 
+def replace_with_pruned(m, name):    
+    #print(m)
+    print("{}, {}".format(name, str(type(m))))
+    #if type(m) == NMSparseConv or type(m) == NMSparseLinear:
+    #    return
 
+    # HACK: directly replace conv layers of downsamples
+    if name == "downsample":
+        m[0] = NMSparseConv(m[0])
+    if name == "double_conv":
+        m[0] = NMSparseConv(m[0])
+        m[3] = NMSparseConv(m[3])
+        
+    for attr_str in dir(m):
+        target_attr = getattr(m, attr_str)
+        if type(target_attr) == torch.nn.Conv2d:
+            print("Replaced CONV")
+            setattr(m, attr_str, NMSparseConv(target_attr))
+        elif type(target_attr) == torch.nn.Linear:
+            print("Replaced Linear")
+            setattr(m, attr_str, NMSparseLinear(target_attr))
+
+    for n, ch in m.named_children():
+        replace_with_pruned(ch, n)
+            
 def get_args():
     parser = argparse.ArgumentParser(description='Train the UNet on images and target masks')
     parser.add_argument('--epochs', '-e', metavar='E', type=int, default=5, help='Number of epochs')
@@ -182,6 +209,11 @@ if __name__ == '__main__':
         logging.info(f'Model loaded from {args.load}')
 
     net.to(device=device)
+
+    replace_with_pruned(net, "net")
+    for layer in net.named_modules():
+        print(layer)
+    
     try:
         train_net(net=net,
                   epochs=args.epochs,
