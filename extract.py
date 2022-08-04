@@ -12,7 +12,7 @@ LAYER_IDX = 0
 init(autoreset=True)
 """ --------------------- """
 
-def export(model, model_name, out_path, inference_func):
+def export(model, model_name, out_path, inference_func, full_img, device):
     global LAYER_IDX
     
     model.eval()
@@ -75,7 +75,7 @@ def export(model, model_name, out_path, inference_func):
         m.register_forward_pre_hook(extract)
 
     #model(IFM)
-    inference_func(model, lmdb=True, amp=True, extract=True)
+    inference_func(model, full_img, device, extract=True)
     
     with open(out_path+model_name+".h5", "wb") as f:
         pickle.dump(models, f)
